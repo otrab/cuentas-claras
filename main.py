@@ -97,7 +97,7 @@ def main():
     locale.setlocale(locale.LC_TIME, 'es_ES')
 
     # Obtener la fecha del primer dato del DataFrame
-    fecha_primer_dato_str = df_cargos.iloc[0][0]
+    fecha_primer_dato_str = df_cargos.iloc[0, 0]
 
     # Convertir la fecha a formato datetime
     fecha_primer_dato = datetime.strptime(fecha_primer_dato_str, "%d/%m")
