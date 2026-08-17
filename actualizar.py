@@ -198,48 +198,110 @@ def crear_hoja_mes(spreadsheet, anio, mes, movimientos):
     return ws
 
 
+MESES_ABREV_A_NUM = {
+    "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6,
+    "jul": 7, "ago": 8, "sept": 9, "sep": 9, "oct": 10, "nov": 11, "dic": 12,
+}
+
+
+def parsear_fecha_resumen(valor):
+    """Convierte el valor crudo de columna B de 'resumen' a (año, mes).
+    Soporta el formato real del Sheet ('jul\xa0/\xa026', 'jul / 2026',
+    'Jul 2026', etc.) y también fechas ISO por si vinieran así.
+    Devuelve None si no logra interpretarlo."""
+    if not valor or not isinstance(valor, str):
+        return None
+
+    # Normalizar espacios raros (non-breaking space) y mayúsculas
+    limpio = valor.replace("\xa0", " ").strip().lower()
+
+    # Caso ISO: "2026-07-01"
+    try:
+        f = datetime.strptime(limpio, "%Y-%m-%d")
+        return (f.year, f.month)
+    except ValueError:
+        pass
+
+    # Caso "jul / 26" o "jul/26" o "jul 26" o "jul / 2026"
+    partes = limpio.replace("/", " ").split()
+    if len(partes) >= 2:
+        mes_str = partes[0][:4] if partes[0][:4] in MESES_ABREV_A_NUM else partes[0][:3]
+        anio_str = partes[1]
+        if mes_str in MESES_ABREV_A_NUM and anio_str.isdigit():
+            mes = MESES_ABREV_A_NUM[mes_str]
+            anio = int(anio_str)
+            if anio < 100:
+                anio += 2000
+            return (anio, mes)
+
+    return None
+
+
+def fechas_existentes_en_resumen(ws):
+    """Devuelve el set de (año, mes) que ya tienen fila en 'resumen'."""
+    valores_b = ws.col_values(2)  # columna B = Mes (fechas)
+    existentes = set()
+    for val in valores_b[2:]:  # datos desde fila 3
+        par = parsear_fecha_resumen(val)
+        if par:
+            existentes.add(par)
+    return existentes
+
+
 def asegurar_fila_resumen(spreadsheet, anio, mes):
     """Crea (si no existe) la fila del mes en 'resumen', enlazada a la hoja
-    de ese mes vía fórmulas, siguiendo el patrón vigente (iferror)."""
+    de ese mes vía fórmulas, siguiendo el patrón vigente (iferror).
+    Devuelve True si creó la fila, False si ya existía."""
     ws = spreadsheet.worksheet("resumen")
     titulo_mes = nombre_hoja(anio, mes)
 
     valores_b = ws.col_values(2)  # columna B = Mes (fechas)
-    fecha_objetivo = datetime(anio, mes, 1)
 
-    for i, val in enumerate(valores_b[2:], start=3):  # datos desde fila 3
-        try:
-            fecha_fila = datetime.strptime(val, "%Y-%m-%d") if isinstance(val, str) else None
-        except ValueError:
-            fecha_fila = None
-        if fecha_fila and fecha_fila.year == anio and fecha_fila.month == mes:
-            print(f"   ℹ️  La fila de {titulo_mes} ya existe en 'resumen' (fila {i}). No se toca.")
-            return
+    if (anio, mes) in fechas_existentes_en_resumen(ws):
+        print(f"   ℹ️  La fila de {titulo_mes} ya existe en 'resumen'. No se toca.")
+        return False
 
     fila = len(valores_b) + 1
 
+    # Asegurar que la hoja física tenga suficientes filas antes de escribir.
+    if ws.row_count < fila:
+        ws.add_rows(fila - ws.row_count)
+
+    mes_abrev = {v: k for k, v in MESES_ABREV_A_NUM.items() if k != "sep"}[mes]
+    texto_mes = f"{mes_abrev} / {anio % 100:02d}"
+
+    # E (Ingreso Pía) se deja genuinamente vacía -- Pía la completa a mano.
+    # None le indica a gspread que no escriba nada en esa celda del rango.
     fila_datos = [
         False,                              # A: Cuenta clara?
-        fecha_objetivo.strftime("%Y-%m-%d"),  # B: Mes
+        texto_mes,                            # B: Mes (mismo formato que usan: "jul / 26")
         f"=SUM(D{fila}:E{fila})",            # C: Ingreso Familiar
         f"='{titulo_mes}'!F1",               # D: Ingreso Seba
-        "",                                   # E: Ingreso Pía (a mano)
+        None,                                  # E: Ingreso Pía (a mano, queda vacía)
         f"=SUM(I{fila}:J{fila})",            # F: Gasto Familia
-        f'=iferror(D{fila}/C{fila},"")*100', # G: %S
-        f'=iferror(E{fila}/C{fila},"")*100', # H: %P
+        f'=iferror(D{fila}/C{fila})*100',    # G: %S
+        f'=iferror(E{fila}/C{fila})*100',    # H: %P
         f"='{titulo_mes}'!C1",               # I: Gasto Seba
         f"='{titulo_mes}'!D1",               # J: Gasto Pia
-        f'=iferror((D{fila}/C{fila})*F{fila},"")',  # K: Pago Total Seba
-        f'=iferror((E{fila}/C{fila})*F{fila},"")',  # L: Pago Total Pía
+        f'=iferror((D{fila}/C{fila})*F{fila})',  # K: Pago Total Seba
+        f'=iferror((E{fila}/C{fila})*F{fila})',  # L: Pago Total Pía
         f"=K{fila}-I{fila}",                 # M: AJUSTE / Diferencia Seba
         f"=L{fila}-J{fila}",                 # N: Diferencia Pía
         f"=C{fila}-F{fila}",                 # O: Capacidad de ahorro
         f"=D{fila}-K{fila}",                 # P: Ahorro S
-        f'=iferror(E{fila}-L{fila},"")',     # Q: Ahorro P
+        f'=iferror(E{fila}-L{fila})',        # Q: Ahorro P
     ]
 
-    ws.update(f"A{fila}:Q{fila}", [fila_datos], value_input_option="USER_ENTERED")
+    # Escribir cada celda por separado evita que gspread mande "" literal
+    # a celdas que deben quedar vacías (None se omite del payload).
+    celdas = []
+    letras = "ABCDEFGHIJKLMNOPQ"
+    for letra, valor in zip(letras, fila_datos):
+        if valor is not None:
+            celdas.append(gspread.Cell(row=fila, col=letras.index(letra) + 1, value=valor))
+    ws.update_cells(celdas, value_input_option="USER_ENTERED")
     print(f"   ✅ Fila de '{titulo_mes}' agregada a 'resumen' (fila {fila}).")
+    return True
 
 
 def crear_fila_mes_siguiente_si_falta(spreadsheet, anio, mes):
@@ -250,6 +312,38 @@ def crear_fila_mes_siguiente_si_falta(spreadsheet, anio, mes):
     else:
         anio_sig, mes_sig = anio, mes + 1
     asegurar_fila_resumen(spreadsheet, anio_sig, mes_sig)
+
+
+def revisar_meses_faltantes_en_resumen(spreadsheet):
+    """Recorre, desde el mes más reciente que ya tiene fila en 'resumen'
+    hasta el mes actual (inclusive), y crea directo (sin preguntar) la fila
+    de cualquier mes ya iniciado que todavía no exista. No crea meses
+    futuros que no hayan empezado."""
+    ws = spreadsheet.worksheet("resumen")
+    existentes = fechas_existentes_en_resumen(ws)
+
+    if not existentes:
+        print("   ⚠️  'resumen' no tiene ninguna fila de mes todavía; no autocompleto nada.")
+        return
+
+    ultimo_anio, ultimo_mes = max(existentes)
+    hoy = datetime.today()
+
+    creadas = []
+    anio, mes = ultimo_anio, ultimo_mes
+    while (anio, mes) <= (hoy.year, hoy.month):
+        if (anio, mes) not in existentes:
+            asegurar_fila_resumen(spreadsheet, anio, mes)
+            creadas.append(nombre_hoja(anio, mes))
+        if mes == 12:
+            anio, mes = anio + 1, 1
+        else:
+            mes += 1
+
+    if creadas:
+        print(f"   ✅ Filas de 'resumen' completadas para: {', '.join(creadas)}")
+    else:
+        print("   ℹ️  'resumen' ya tiene fila para todos los meses hasta hoy.")
 
 
 # --------------------------------------------------------------------------
@@ -276,11 +370,17 @@ def mostrar_desglose(anio, mes, movimientos):
 def main():
     llaves = leer_llaves()
 
-    archivos = sorted(glob.glob(os.path.join(CARPETA_CARTOLAS, "*.xls")))
-    if not archivos:
-        sys.exit(f"❌ No hay archivos .xls en {CARPETA_CARTOLAS}")
+    print("\n🔗 Conectando a Google Sheets...")
+    spreadsheet = conectar_sheet()
 
-    print(f"📂 Encontré {len(archivos)} cartola(s) en {CARPETA_CARTOLAS}")
+    # Primero, siempre, se revisa que 'resumen' tenga fila para todos los
+    # meses ya iniciados (se crean directo, sin preguntar), antes de tocar
+    # ninguna cartola.
+    print("\n🗓️  Revisando filas de 'resumen'...")
+    revisar_meses_faltantes_en_resumen(spreadsheet)
+
+    archivos = sorted(glob.glob(os.path.join(CARPETA_CARTOLAS, "*.xls")))
+    print(f"\n📂 Encontré {len(archivos)} cartola(s) en {CARPETA_CARTOLAS}")
 
     todos_los_movimientos = []
     for archivo in archivos:
@@ -291,8 +391,6 @@ def main():
 
     grupos = agrupar_por_mes(todos_los_movimientos)
 
-    print("\n🔗 Conectando a Google Sheets...")
-    spreadsheet = conectar_sheet()
     existentes = hojas_de_mes_existentes(spreadsheet)
 
     meses_nuevos = {}
@@ -304,7 +402,7 @@ def main():
             meses_nuevos[(anio, mes)] = movs
 
     if not meses_nuevos:
-        print("\n✅ No hay meses nuevos por agregar. Todo al día.")
+        print("\n✅ No hay meses nuevos de cartola por agregar. Todo al día.")
         return
 
     for (anio, mes), movs in sorted(meses_nuevos.items()):

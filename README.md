@@ -34,6 +34,15 @@ Sheet "cuentas claras") en esta misma carpeta.
    - Los meses que ya tienen hoja se saltan siempre — nunca se
      sobrescriben.
 
+## Filas de `resumen`
+
+Cada vez que corrés el script — haya o no una cartola nueva que
+subir — revisa si faltan filas en `resumen` para algún mes que ya
+empezó (desde el último mes que ya tiene fila, hasta el mes actual).
+Si falta alguna, la crea directo, sin preguntar (son filas vacías,
+solo con fórmulas, sin montos reales). Nunca crea filas de meses
+futuros que todavía no empezaron.
+
 ## Sobre `llaves.txt`
 
 Una descripción (o fragmento de descripción) por línea. Cualquier
