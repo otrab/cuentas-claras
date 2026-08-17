@@ -7,3 +7,18 @@ GIRO CAJERO AUTOMATICO
 TRASPASO A:Roberto Saez
 PAGO:ENTEL ONECLICK PC
 TRASPASO A:Eduardo Saez
+TRASPASO A:Gabriela Sepulveda
+TRASPASO A:Paola Alejandra Millan
+TRASPASO A:Maria Jose Silva Munoz
+TRASPASO A:Cinthia Catherine Vill
+TRASPASO A:Nicole Budini
+TRASPASO A:Constanza Monge
+TRASPASO A:Asociacion Mawida
+CARGO SEGURO PROTECCION BANCARIA
+TRASPASO A:Sebastian Leon Ferrufin
+TRASPASO A:Fernando Torres
+TRASPASO A:Byron Jones
+TRASPASO A:Clemente Anibal Pinto
+PAGO:CHILE VAPO SPA
+TRASPASO A:Antonia Fischer
+TRASPASO A:Asociacion Para La Bue
